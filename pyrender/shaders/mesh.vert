@@ -29,9 +29,12 @@ layout(location = INST_M_LOC) in mat4 inst_m;
 uniform mat4 M;
 uniform mat4 V;
 uniform mat4 P;
+uniform vec3 instance_color;
 
 // Outputs
 out vec3 frag_position;
+out vec3 Instance_color;
+out vec3 Pos_cam;
 #ifdef NORMAL_LOC
 out vec3 frag_normal;
 #endif
@@ -57,6 +60,10 @@ void main()
 {
     gl_Position = P * V * M * inst_m * vec4(position, 1);
     frag_position = vec3(M * inst_m * vec4(position, 1.0));
+    Instance_color = instance_color;
+
+    vec4 pos_cam4 = V * M * inst_m * vec4(position, 1);
+    Pos_cam = pos_cam4.xyz / pos_cam4.w;
 
     mat4 N = transpose(inverse(M * inst_m));
 

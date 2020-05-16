@@ -155,7 +155,7 @@ class Mesh(object):
 
     @staticmethod
     def from_trimesh(mesh, material=None, is_visible=True,
-                     poses=None, wireframe=False, smooth=True):
+                     poses=None, wireframe=False, smooth=True, instance_color=[1.0, 0.0, 0.0]):
         """Create a Mesh from a :class:`~trimesh.base.Trimesh`.
 
         Parameters
@@ -232,7 +232,8 @@ class Mesh(object):
                 indices=indices,
                 material=primitive_material,
                 mode=GLTF.TRIANGLES,
-                poses=poses
+                poses=poses,
+                instance_color=instance_color
             ))
 
         return Mesh(primitives=primitives, is_visible=is_visible)

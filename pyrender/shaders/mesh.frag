@@ -113,6 +113,8 @@ uniform samplerCube specular_env;
 ///////////////////////////////////////////////////////////////////////////////
 
 in vec3 frag_position;
+in vec3 Instance_color;
+in vec3 Pos_cam;
 #ifdef NORMAL_LOC
 in vec3 frag_normal;
 #endif
@@ -137,7 +139,9 @@ in vec4 color_multiplier;
 // OUTPUTS
 ///////////////////////////////////////////////////////////////////////////////
 
-out vec4 frag_color;
+layout (location = 0) out vec4 frag_color;
+layout (location = 1) out vec4 InstanceColour;
+layout (location = 2) out vec4 PCColour;
 
 ///////////////////////////////////////////////////////////////////////////////
 // Constants
@@ -444,6 +448,8 @@ void main()
 #endif
 
     frag_color = clamp(vec4(pow(color.xyz, vec3(1.0/2.2)), color.a * base_color.a), 0.0, 1.0);
+    InstanceColour = vec4(Instance_color, 1);
+    PCColour = vec4(Pos_cam, 1);
 
 #else
     // TODO GLOSSY MATERIAL BRDF

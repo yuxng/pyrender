@@ -49,11 +49,9 @@ class Renderer(object):
 
         # Optional framebuffer for offscreen renders
         self._main_fb = None
-        self._main_cb = None
-        self._main_db = None
-        self._main_fb_ms = None
-        self._main_cb_ms = None
-        self._main_db_ms = None
+        self._color_tex_0 = None
+        self._color_tex_1 = None
+        self._color_tex_2 = None
         self._main_fb_dims = (None, None)
         self._shadow_fb = None
         self._latest_znear = DEFAULT_Z_NEAR
@@ -351,6 +349,9 @@ class Renderer(object):
                 program.set_uniform('P', P)
                 program.set_uniform(
                     'cam_pos', scene.get_pose(scene.main_camera_node)[:3,3]
+                )
+                program.set_uniform(
+                    'instance_color', np.array(primitive.instance_color)
                 )
 
                 # Next, bind the lighting
@@ -977,7 +978,6 @@ class Renderer(object):
         # If using offscreen render, bind main framebuffer
         if flags & RenderFlags.OFFSCREEN:
             self._configure_main_framebuffer()
-            glBindFramebuffer(GL_DRAW_FRAMEBUFFER, self._main_fb_ms)
         else:
             glBindFramebuffer(GL_DRAW_FRAMEBUFFER, 0)
 
@@ -1027,136 +1027,65 @@ class Renderer(object):
 
         # If framebuffer doesn't exist, create it
         if self._main_fb is None:
-            # Generate standard buffer
-            self._main_cb, self._main_db = glGenRenderbuffers(2)
-
-            glBindRenderbuffer(GL_RENDERBUFFER, self._main_cb)
-            glRenderbufferStorage(
-                GL_RENDERBUFFER, GL_RGBA,
-                self.viewport_width, self.viewport_height
-            )
-
-            glBindRenderbuffer(GL_RENDERBUFFER, self._main_db)
-            glRenderbufferStorage(
-                GL_RENDERBUFFER, GL_DEPTH_COMPONENT24,
-                self.viewport_width, self.viewport_height
-            )
-
             self._main_fb = glGenFramebuffers(1)
-            glBindFramebuffer(GL_DRAW_FRAMEBUFFER, self._main_fb)
-            glFramebufferRenderbuffer(
-                GL_DRAW_FRAMEBUFFER, GL_COLOR_ATTACHMENT0,
-                GL_RENDERBUFFER, self._main_cb
-            )
-            glFramebufferRenderbuffer(
-                GL_DRAW_FRAMEBUFFER, GL_DEPTH_ATTACHMENT,
-                GL_RENDERBUFFER, self._main_db
-            )
-
-            # Generate multisample buffer
-            self._main_cb_ms, self._main_db_ms = glGenRenderbuffers(2)
-            glBindRenderbuffer(GL_RENDERBUFFER, self._main_cb_ms)
-            glRenderbufferStorageMultisample(
-                GL_RENDERBUFFER, 4, GL_RGBA,
-                self.viewport_width, self.viewport_height
-            )
-            glBindRenderbuffer(GL_RENDERBUFFER, self._main_db_ms)
-            glRenderbufferStorageMultisample(
-                GL_RENDERBUFFER, 4, GL_DEPTH_COMPONENT24,
-                self.viewport_width, self.viewport_height
-            )
-            self._main_fb_ms = glGenFramebuffers(1)
-            glBindFramebuffer(GL_DRAW_FRAMEBUFFER, self._main_fb_ms)
-            glFramebufferRenderbuffer(
-                GL_DRAW_FRAMEBUFFER, GL_COLOR_ATTACHMENT0,
-                GL_RENDERBUFFER, self._main_cb_ms
-            )
-            glFramebufferRenderbuffer(
-                GL_DRAW_FRAMEBUFFER, GL_DEPTH_ATTACHMENT,
-                GL_RENDERBUFFER, self._main_db_ms
-            )
-
             self._main_fb_dims = (self.viewport_width, self.viewport_height)
+            self._color_tex_0 = glGenTextures(1)
+            self._color_tex_1 = glGenTextures(1)
+            self._color_tex_2 = glGenTextures(1)
+
+            glBindTexture(GL_TEXTURE_2D, self._color_tex_0)
+            glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA32F, self.viewport_width, self.viewport_height, 0,
+                         GL_RGBA, GL_UNSIGNED_BYTE, None)
+
+            glBindTexture(GL_TEXTURE_2D, self._color_tex_1)
+            glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA32F, self.viewport_width, self.viewport_height, 0,
+                         GL_RGBA, GL_UNSIGNED_BYTE, None)
+
+            glBindTexture(GL_TEXTURE_2D, self._color_tex_2)
+            glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA32F, self.viewport_width, self.viewport_height, 0,
+                         GL_RGBA, GL_FLOAT, None)
+
+            glBindFramebuffer(GL_FRAMEBUFFER, self._main_fb)
+            glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, self._color_tex_0, 0)
+            glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT1, GL_TEXTURE_2D, self._color_tex_1, 0)
+            glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT2, GL_TEXTURE_2D, self._color_tex_2, 0)
+            glDrawBuffers(3, [GL_COLOR_ATTACHMENT0, GL_COLOR_ATTACHMENT1, GL_COLOR_ATTACHMENT2])
+            assert glCheckFramebufferStatus(GL_FRAMEBUFFER) == GL_FRAMEBUFFER_COMPLETE
 
     def _delete_main_framebuffer(self):
         if self._main_fb is not None:
-            glDeleteFramebuffers(2, [self._main_fb, self._main_fb_ms])
-        if self._main_cb is not None:
-            glDeleteRenderbuffers(2, [self._main_cb, self._main_cb_ms])
-        if self._main_db is not None:
-            glDeleteRenderbuffers(2, [self._main_db, self._main_db_ms])
+            glDeleteFramebuffers(1, [self._main_fb])
 
         self._main_fb = None
-        self._main_cb = None
-        self._main_db = None
-        self._main_fb_ms = None
-        self._main_cb_ms = None
-        self._main_db_ms = None
+        self._color_tex_0 = None
+        self._color_tex_1 = None
+        self._color_tex_2 = None
         self._main_fb_dims = (None, None)
 
     def _read_main_framebuffer(self, scene, flags):
         width, height = self._main_fb_dims[0], self._main_fb_dims[1]
 
-        # Bind framebuffer and blit buffers
-        glBindFramebuffer(GL_READ_FRAMEBUFFER, self._main_fb_ms)
-        glBindFramebuffer(GL_DRAW_FRAMEBUFFER, self._main_fb)
-        glBlitFramebuffer(
-            0, 0, width, height, 0, 0, width, height,
-            GL_COLOR_BUFFER_BIT, GL_LINEAR
-        )
-        glBlitFramebuffer(
-            0, 0, width, height, 0, 0, width, height,
-            GL_DEPTH_BUFFER_BIT, GL_NEAREST
-        )
-        glBindFramebuffer(GL_READ_FRAMEBUFFER, self._main_fb)
+        # color image
+        glReadBuffer(GL_COLOR_ATTACHMENT0)
+        frame = glReadPixels(0, 0, width, height, GL_BGRA, GL_FLOAT)
+        frame = frame.reshape(height, width, 4)[::-1, :]
+        frame = frame[:,:,:3]
 
-        # Read depth
-        depth_buf = glReadPixels(
-            0, 0, width, height, GL_DEPTH_COMPONENT, GL_FLOAT
-        )
-        depth_im = np.frombuffer(depth_buf, dtype=np.float32)
-        depth_im = depth_im.reshape((height, width))
-        depth_im = np.flip(depth_im, axis=0)
-        inf_inds = (depth_im == 1.0)
-        depth_im = 2.0 * depth_im - 1.0
-        z_near = scene.main_camera_node.camera.znear
-        z_far = scene.main_camera_node.camera.zfar
-        noninf = np.logical_not(inf_inds)
-        if z_far is None:
-            depth_im[noninf] = 2 * z_near / (1.0 - depth_im[noninf])
-        else:
-            depth_im[noninf] = ((2.0 * z_near * z_far) /
-                                (z_far + z_near - depth_im[noninf] *
-                                (z_far - z_near)))
-        depth_im[inf_inds] = 0.0
+        # instance segmentation
+        glReadBuffer(GL_COLOR_ATTACHMENT1)
+        seg = glReadPixels(0, 0, width, height, GL_RGBA, GL_FLOAT)
+        seg = seg.reshape(height, width, 4)[::-1, :]
+        seg = seg[:,:,:3]
 
-        # Resize for macos if needed
-        if sys.platform == 'darwin':
-            depth_im = self._resize_image(depth_im)
+        # points in camera coordinate
+        glReadBuffer(GL_COLOR_ATTACHMENT2)
+        pc = glReadPixels(0, 0, width, height, GL_RGBA, GL_FLOAT)
+        pc = pc.reshape(height, width, 4)[::-1, :]
+        pc = pc[:,:,:3]
+        pc[:, :, 1] = -1 * pc[:, :, 1]
+        pc[:, :, 2] = -1 * pc[:, :, 2]
 
-        if flags & RenderFlags.DEPTH_ONLY:
-            return depth_im
-
-        # Read color
-        if flags & RenderFlags.RGBA:
-            color_buf = glReadPixels(
-                0, 0, width, height, GL_RGBA, GL_UNSIGNED_BYTE
-            )
-            color_im = np.frombuffer(color_buf, dtype=np.uint8)
-            color_im = color_im.reshape((height, width, 4))
-        else:
-            color_buf = glReadPixels(
-                0, 0, width, height, GL_RGB, GL_UNSIGNED_BYTE
-            )
-            color_im = np.frombuffer(color_buf, dtype=np.uint8)
-            color_im = color_im.reshape((height, width, 3))
-        color_im = np.flip(color_im, axis=0)
-
-        # Resize for macos if needed
-        if sys.platform == 'darwin':
-            color_im = self._resize_image(color_im, True)
-
-        return color_im, depth_im
+        return frame, seg, pc
 
     def _resize_image(self, value, antialias=False):
         """If needed, rescale the render for MacOS."""
